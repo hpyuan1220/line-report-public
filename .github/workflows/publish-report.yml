@@ -91,13 +91,13 @@ jobs:
           ]
 
           MACRO = [
-              ("聯邦基金有效利率", "Fed Funds Effective Rate", "DFF"),
-              ("美國 10 年公債殖利率", "US 10Y Treasury Yield", "DGS10"),
-              ("美國 2 年公債殖利率", "US 2Y Treasury Yield", "DGS2"),
-              ("失業率", "Unemployment Rate", "UNRATE"),
-              ("非農就業人數", "Nonfarm Payrolls", "PAYEMS"),
-              ("CPI 消費者物價指數", "CPI Index", "CPIAUCSL"),
-              ("PCE 物價指數", "PCE Price Index", "PCEPI"),
+              ("聯邦基金有效利率", "Fed Funds Effective Rate", "DFF", "lower_good"),
+              ("美國 10 年公債殖利率", "US 10Y Treasury Yield", "DGS10", "lower_good"),
+              ("美國 2 年公債殖利率", "US 2Y Treasury Yield", "DGS2", "lower_good"),
+              ("失業率", "Unemployment Rate", "UNRATE", "lower_good"),
+              ("非農就業人數", "Nonfarm Payrolls", "PAYEMS", "higher_good"),
+              ("CPI 消費者物價指數", "CPI Index", "CPIAUCSL", "lower_good"),
+              ("PCE 物價指數", "PCE Price Index", "PCEPI", "lower_good"),
           ]
 
           def yahoo_quote(symbol):
@@ -130,17 +130,44 @@ jobs:
               except Exception:
                   return None
 
-          def fred_latest(series):
+          def fred_points(series):
               url = f"https://fred.stlouisfed.org/graph/fredgraph.csv?id={series}"
               try:
                   with urllib.request.urlopen(url, timeout=25) as r:
                       rows = list(csv.reader(StringIO(r.read().decode("utf-8"))))
-                  for date, value in reversed(rows[1:]):
+                  points = []
+                  for date, value in rows[1:]:
                       if value and value != ".":
-                          return date, value
+                          try:
+                              points.append((date, float(value)))
+                          except Exception:
+                              pass
+                  return points
               except Exception:
-                  pass
-              return "資料源暫缺", "資料源暫缺"
+                  return []
+
+          def macro_status(change, direction):
+              if change is None:
+                  return "資料暫缺", "flat"
+              if abs(change) < 1e-12:
+                  return "持平", "flat"
+              is_good = change > 0 if direction == "higher_good" else change < 0
+              if is_good:
+                  return "較前值改善", "up"
+              return "較前值轉弱", "down"
+
+          def macro_row(zh, en, series, direction):
+              points = fred_points(series)
+              if not points:
+                  return tr([zh, en, series, "資料源暫缺", "資料源暫缺", "資料源暫缺", "", ("資料暫缺", "flat")])
+              latest_date, latest_value = points[-1]
+              if len(points) >= 2:
+                  prev_date, prev_value = points[-2]
+                  change = latest_value - prev_value
+                  change_text = f"{change:+.3f}"
+                  status, cls = macro_status(change, direction)
+                  return tr([zh, en, series, latest_date, f"{latest_value:g}", f"{prev_value:g} ({prev_date})", (change_text, cls), (status, cls)])
+              return tr([zh, en, series, latest_date, f"{latest_value:g}", "無前值", "", ("無法比較", "flat")])
 
           def change_class(value):
               text = str(value).strip().replace("%", "")
@@ -202,20 +229,19 @@ jobs:
               return "".join(rows)
 
           macro_rows = []
-          for zh, en, series in MACRO:
-              date, value = fred_latest(series)
-              macro_rows.append(tr([zh, en, series, date, value]))
+          for zh, en, series, direction in MACRO:
+              macro_rows.append(macro_row(zh, en, series, direction))
 
           group_sections = "".join(watch_group_html(title, items) for title, items in WATCH_GROUPS.items())
           rules = [
               "Schwab watchlist 只保存股票代號與清單名稱，不保存帳戶號碼或持倉數量。",
               "這是 data-only 報告：不使用 OpenAI API、不產生 AI 投資建議。",
               "價格欄位以公開資料源的最新可得收盤價為主，通常是上一個美股交易日。",
-              "宏觀數字使用 FRED 公開資料；CPI、PCE、非農、失業率不是每日更新，會顯示最新公布月份。",
+              "宏觀數字使用 FRED 公開資料；會比較最新公布值與前一筆公布值，利率/通膨/失業率下降偏綠，非農上升偏綠。",
               "此報告只做 watchlist 與風險監控，不是財務、稅務或法律建議；是否買賣由 Irene 自己決定。",
           ]
 
-          page = f"""<!doctype html><html lang="zh-Hant"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Irene 每日市場儀表板</title><style>body{{font-family:-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif;background:#f6f7f9;color:#1f2328;margin:0}}main{{max-width:1120px;margin:0 auto;padding:24px 14px 44px}}h1{{font-size:28px}}h2{{font-size:20px;margin-top:28px;border-bottom:1px solid #d8dee4;padding-bottom:6px}}p,li{{line-height:1.58}}table{{width:100%;border-collapse:collapse;background:#fff;margin:12px 0 24px}}th,td{{border:1px solid #d8dee4;padding:8px 9px;text-align:left;font-size:14px}}th{{background:#eef1f4}}tr:nth-child(even) td{{background:#fafbfc}}.note{{background:#fff;border:1px solid #d8dee4;border-radius:8px;padding:12px}}.up{{color:#137333;font-weight:700}}.down{{color:#c5221f;font-weight:700}}.flat{{color:#57606a;font-weight:600}}@media(max-width:760px){{main{{padding:18px 10px 36px}}table{{display:block;overflow-x:auto}}h1{{font-size:24px}}}}</style></head><body><main><h1>Irene 每日市場儀表板</h1><p><strong>產生時間：</strong>{NOW:%Y-%m-%d %H:%M} 台北時間</p><div class="note"><p><strong>資料來源：</strong>Schwab 自訂 watchlist 代號 + 公開市場收盤價 + FRED 宏觀數字。不使用 OpenAI API。</p></div>{group_sections}<h2>Oscar Watch List / Oscar 建議價位觀察</h2><p>來源：Irene 朋友 Oscar 提供。這是觀察清單，不是自動買賣建議。</p><table><thead><tr><th>順序</th><th>股票代號</th><th>Oscar 建議價位區間</th><th>最新日期</th><th>幣別</th><th>最新收盤價</th><th>日變動</th><th>狀態</th></tr></thead><tbody>{oscar_rows()}</tbody></table><h2>宏觀數字觀察 / Macro Watch</h2><table><thead><tr><th>中文指標</th><th>英文指標</th><th>資料代號</th><th>最新日期</th><th>最新數值</th></tr></thead><tbody>{''.join(macro_rows)}</tbody></table><h2>固定規則提醒 / Rule-Based Notes</h2><ul>{''.join(f'<li>{html.escape(r)}</li>' for r in rules)}</ul></main></body></html>"""
+          page = f"""<!doctype html><html lang="zh-Hant"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Irene 每日市場儀表板</title><style>body{{font-family:-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif;background:#f6f7f9;color:#1f2328;margin:0}}main{{max-width:1120px;margin:0 auto;padding:24px 14px 44px}}h1{{font-size:28px}}h2{{font-size:20px;margin-top:28px;border-bottom:1px solid #d8dee4;padding-bottom:6px}}p,li{{line-height:1.58}}table{{width:100%;border-collapse:collapse;background:#fff;margin:12px 0 24px}}th,td{{border:1px solid #d8dee4;padding:8px 9px;text-align:left;font-size:14px}}th{{background:#eef1f4}}tr:nth-child(even) td{{background:#fafbfc}}.note{{background:#fff;border:1px solid #d8dee4;border-radius:8px;padding:12px}}.up{{color:#137333;font-weight:700}}.down{{color:#c5221f;font-weight:700}}.flat{{color:#57606a;font-weight:600}}@media(max-width:760px){{main{{padding:18px 10px 36px}}table{{display:block;overflow-x:auto}}h1{{font-size:24px}}}}</style></head><body><main><h1>Irene 每日市場儀表板</h1><p><strong>產生時間：</strong>{NOW:%Y-%m-%d %H:%M} 台北時間</p><div class="note"><p><strong>資料來源：</strong>Schwab 自訂 watchlist 代號 + 公開市場收盤價 + FRED 宏觀數字。不使用 OpenAI API。</p></div>{group_sections}<h2>Oscar Watch List / Oscar 建議價位觀察</h2><p>來源：Irene 朋友 Oscar 提供。這是觀察清單，不是自動買賣建議。</p><table><thead><tr><th>順序</th><th>股票代號</th><th>Oscar 建議價位區間</th><th>最新日期</th><th>幣別</th><th>最新收盤價</th><th>日變動</th><th>狀態</th></tr></thead><tbody>{oscar_rows()}</tbody></table><h2>宏觀數字觀察 / Macro Watch</h2><table><thead><tr><th>中文指標</th><th>英文指標</th><th>資料代號</th><th>最新日期</th><th>最新數值</th><th>前值</th><th>變化</th><th>狀態</th></tr></thead><tbody>{''.join(macro_rows)}</tbody></table><h2>固定規則提醒 / Rule-Based Notes</h2><ul>{''.join(f'<li>{html.escape(r)}</li>' for r in rules)}</ul></main></body></html>"""
           Path("public/index.html").write_text(page, encoding="utf-8")
           Path("public/investment.html").write_text(page, encoding="utf-8")
           Path("public/ai-startup.html").write_text("<!doctype html><html lang=\"zh-Hant\"><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width, initial-scale=1\"><title>AI 創業觀察</title></head><body><main><h1>AI 創業觀察</h1><p>目前先保存 Schwab watchlist 到 data-only 市場儀表板。AI startup 新聞資料源可下一步加入。</p></main></body></html>", encoding="utf-8")
