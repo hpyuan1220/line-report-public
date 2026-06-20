@@ -1,1 +1,1 @@
-Trigger public LINE report after Pages manual enable at 2026-06-20 14:31 Asia/Taipei
+Trigger AI writer workflow test at 2026-06-20 14:48 Asia/Taipei
