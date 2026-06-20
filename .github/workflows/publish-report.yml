@@ -142,16 +142,31 @@ jobs:
                   pass
               return "資料源暫缺", "資料源暫缺"
 
-          def td(value):
-              return f"<td>{html.escape(str(value))}</td>"
+          def change_class(value):
+              text = str(value).strip()
+              if text.startswith("+"):
+                  return "up"
+              if text.startswith("-"):
+                  return "down"
+              return "flat"
+
+          def td(value, css_class=""):
+              cls = f' class="{css_class}"' if css_class else ""
+              return f"<td{cls}>{html.escape(str(value))}</td>"
 
           def tr(cells):
-              return "<tr>" + "".join(td(c) for c in cells) + "</tr>"
+              out = []
+              for cell in cells:
+                  if isinstance(cell, tuple):
+                      out.append(td(cell[0], cell[1]))
+                  else:
+                      out.append(td(cell))
+              return "<tr>" + "".join(out) + "</tr>"
 
           def quote_row(symbol, note):
               q = yahoo_quote(symbol)
               if q:
-                  return tr([symbol, q["date"], q["currency"], q["close"], q["change"], q["volume"], note])
+                  return tr([symbol, q["date"], q["currency"], q["close"], (q["change"], change_class(q["change"])), q["volume"], note])
               return tr([symbol, "資料源暫缺", "USD", "資料源暫缺", "", "", note])
 
           def watch_group_html(title, items):
@@ -177,7 +192,7 @@ jobs:
                           close = float(q["close"])
                       except Exception:
                           close = None
-                      rows.append(tr([rank, symbol, range_text, q["date"], q["currency"], q["close"], q["change"], oscar_status(close, low, high)]))
+                      rows.append(tr([rank, symbol, range_text, q["date"], q["currency"], q["close"], (q["change"], change_class(q["change"])), oscar_status(close, low, high)]))
                   else:
                       rows.append(tr([rank, symbol, range_text, "資料源暫缺", "USD", "資料源暫缺", "", "資料暫缺，請確認 ticker 是否正確"]))
               return "".join(rows)
@@ -196,7 +211,7 @@ jobs:
               "此報告只做 watchlist 與風險監控，不是財務、稅務或法律建議；是否買賣由 Irene 自己決定。",
           ]
 
-          page = f"""<!doctype html><html lang="zh-Hant"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Irene 每日市場儀表板</title><style>body{{font-family:-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif;background:#f6f7f9;color:#1f2328;margin:0}}main{{max-width:1120px;margin:0 auto;padding:24px 14px 44px}}h1{{font-size:28px}}h2{{font-size:20px;margin-top:28px;border-bottom:1px solid #d8dee4;padding-bottom:6px}}p,li{{line-height:1.58}}table{{width:100%;border-collapse:collapse;background:#fff;margin:12px 0 24px}}th,td{{border:1px solid #d8dee4;padding:8px 9px;text-align:left;font-size:14px}}th{{background:#eef1f4}}tr:nth-child(even) td{{background:#fafbfc}}.note{{background:#fff;border:1px solid #d8dee4;border-radius:8px;padding:12px}}@media(max-width:760px){{main{{padding:18px 10px 36px}}table{{display:block;overflow-x:auto}}h1{{font-size:24px}}}}</style></head><body><main><h1>Irene 每日市場儀表板</h1><p><strong>產生時間：</strong>{NOW:%Y-%m-%d %H:%M} 台北時間</p><div class="note"><p><strong>資料來源：</strong>Schwab 自訂 watchlist 代號 + 公開市場收盤價 + FRED 宏觀數字。不使用 OpenAI API。</p></div>{group_sections}<h2>Oscar Watch List / Oscar 建議價位觀察</h2><p>來源：Irene 朋友 Oscar 提供。這是觀察清單，不是自動買賣建議。</p><table><thead><tr><th>順序</th><th>股票代號</th><th>Oscar 建議價位區間</th><th>最新日期</th><th>幣別</th><th>最新收盤價</th><th>日變動</th><th>狀態</th></tr></thead><tbody>{oscar_rows()}</tbody></table><h2>宏觀數字觀察 / Macro Watch</h2><table><thead><tr><th>中文指標</th><th>英文指標</th><th>資料代號</th><th>最新日期</th><th>最新數值</th></tr></thead><tbody>{''.join(macro_rows)}</tbody></table><h2>固定規則提醒 / Rule-Based Notes</h2><ul>{''.join(f'<li>{html.escape(r)}</li>' for r in rules)}</ul></main></body></html>"""
+          page = f"""<!doctype html><html lang="zh-Hant"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Irene 每日市場儀表板</title><style>body{{font-family:-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif;background:#f6f7f9;color:#1f2328;margin:0}}main{{max-width:1120px;margin:0 auto;padding:24px 14px 44px}}h1{{font-size:28px}}h2{{font-size:20px;margin-top:28px;border-bottom:1px solid #d8dee4;padding-bottom:6px}}p,li{{line-height:1.58}}table{{width:100%;border-collapse:collapse;background:#fff;margin:12px 0 24px}}th,td{{border:1px solid #d8dee4;padding:8px 9px;text-align:left;font-size:14px}}th{{background:#eef1f4}}tr:nth-child(even) td{{background:#fafbfc}}.note{{background:#fff;border:1px solid #d8dee4;border-radius:8px;padding:12px}}.up{{color:#137333;font-weight:700}}.down{{color:#c5221f;font-weight:700}}.flat{{color:#57606a;font-weight:600}}@media(max-width:760px){{main{{padding:18px 10px 36px}}table{{display:block;overflow-x:auto}}h1{{font-size:24px}}}}</style></head><body><main><h1>Irene 每日市場儀表板</h1><p><strong>產生時間：</strong>{NOW:%Y-%m-%d %H:%M} 台北時間</p><div class="note"><p><strong>資料來源：</strong>Schwab 自訂 watchlist 代號 + 公開市場收盤價 + FRED 宏觀數字。不使用 OpenAI API。</p></div>{group_sections}<h2>Oscar Watch List / Oscar 建議價位觀察</h2><p>來源：Irene 朋友 Oscar 提供。這是觀察清單，不是自動買賣建議。</p><table><thead><tr><th>順序</th><th>股票代號</th><th>Oscar 建議價位區間</th><th>最新日期</th><th>幣別</th><th>最新收盤價</th><th>日變動</th><th>狀態</th></tr></thead><tbody>{oscar_rows()}</tbody></table><h2>宏觀數字觀察 / Macro Watch</h2><table><thead><tr><th>中文指標</th><th>英文指標</th><th>資料代號</th><th>最新日期</th><th>最新數值</th></tr></thead><tbody>{''.join(macro_rows)}</tbody></table><h2>固定規則提醒 / Rule-Based Notes</h2><ul>{''.join(f'<li>{html.escape(r)}</li>' for r in rules)}</ul></main></body></html>"""
           Path("public/index.html").write_text(page, encoding="utf-8")
           Path("public/investment.html").write_text(page, encoding="utf-8")
           Path("public/ai-startup.html").write_text("<!doctype html><html lang=\"zh-Hant\"><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width, initial-scale=1\"><title>AI 創業觀察</title></head><body><main><h1>AI 創業觀察</h1><p>目前先保存 Schwab watchlist 到 data-only 市場儀表板。AI startup 新聞資料源可下一步加入。</p></main></body></html>", encoding="utf-8")
