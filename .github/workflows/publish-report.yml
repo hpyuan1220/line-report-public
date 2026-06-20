@@ -23,206 +23,99 @@ jobs:
   publish:
     runs-on: ubuntu-latest
     steps:
-      - name: Generate AI report pages
-        env:
-          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
-          OPENAI_MODEL: ${{ secrets.OPENAI_MODEL || 'gpt-4.1-mini' }}
+      - name: Generate data-only market dashboard
         run: |
           set -euo pipefail
           mkdir -p public
           python3 - <<'PY'
-          from __future__ import annotations
-
+          import csv
           import datetime as dt
           import html
-          import json
           import os
-          import re
-          import urllib.error
           import urllib.request
+          from io import StringIO
           from pathlib import Path
           from zoneinfo import ZoneInfo
 
           NOW = dt.datetime.now(ZoneInfo("Asia/Taipei"))
           PUBLIC_BASE = "https://hpyuan1220.github.io/line-report-public"
           CACHE_TAG = os.environ.get("GITHUB_RUN_ID", NOW.strftime("%Y%m%d%H%M"))
-          API_KEY = os.environ.get("OPENAI_API_KEY", "").strip()
-          MODEL = os.environ.get("OPENAI_MODEL", "gpt-4.1-mini").strip() or "gpt-4.1-mini"
-          AI_STATUS = []
 
-          PROFILE = """Irene profile: 61 years old; US and Taiwan citizen; wants to live in both US and Taiwan; house asset about USD 5M cannot be sold now; liquid assets about USD 400K plus NTD 700K plus NTD 300K insurance; no stable fixed income, commission/consulting based; 45 years IT and semiconductor experience; plans about USD 100K high-risk AI startup budget for 2026-2027."""
+          WATCH = [
+              ("S&P 500 ETF", "spy.us", "US core equity proxy"),
+              ("Nasdaq 100 ETF", "qqq.us", "Growth / technology proxy"),
+              ("Semiconductor ETF", "smh.us", "AI and semiconductor risk watch"),
+              ("Total US Market", "vti.us", "Broad US equity"),
+              ("S&P 500 Core", "voo.us", "Core US equity"),
+              ("Dividend Equity", "schd.us", "Income quality watch"),
+              ("Short Treasury", "sgov.us", "Cash parking watch"),
+              ("US Aggregate Bond", "bnd.us", "Bond ETF watch"),
+              ("Nvidia", "nvda.us", "AI infrastructure bellwether"),
+              ("TSMC ADR", "tsm.us", "Taiwan semiconductor bellwether"),
+          ]
 
-          INVESTMENT_PROMPT = f"""Write Irene's daily bilingual investment watch in English and Traditional Chinese.
-          {PROFILE}
-          Do not give formal financial/tax/legal advice. Produce a private-bank-style monitoring briefing, but clearly say it is monitoring only.
-          Required sections: Executive dashboard; Liquidity and risk guardrails; Macro numbers to track including Fed funds, US 2Y/10Y yields, CPI/PCE, unemployment, GDP, USD/TWD, VIX, oil, gold; Market watch including S&P 500, Nasdaq 100, SOX, Taiwan semis; ETF watch SGOV/BIL, VTI/VOO, SCHD, VXUS, BND/AGG, SMH/SOXX; Irene allocation watch; Action checklist.
-          If live prices/data are unavailable, write Data feed pending. Do not invent exact prices. Date: {NOW:%Y-%m-%d %H:%M} Taipei."""
+          MACRO = [
+              ("Fed Funds Effective Rate", "DFF"),
+              ("US 10Y Treasury Yield", "DGS10"),
+              ("US 2Y Treasury Yield", "DGS2"),
+              ("Unemployment Rate", "UNRATE"),
+              ("Nonfarm Payrolls", "PAYEMS"),
+              ("CPI Index", "CPIAUCSL"),
+              ("PCE Price Index", "PCEPI"),
+          ]
 
-          STARTUP_PROMPT = f"""Write Irene's daily bilingual AI startup and technology watch in English and Traditional Chinese.
-          {PROFILE}
-          Irene is evaluating a USD 100K AI startup budget for 2026-2027 and has deep IT/semiconductor experience.
-          Required sections: AI startup executive summary; AI agent market watch; Enterprise AI and automation; Semiconductor and infrastructure implications; Competitor/product watch for OpenAI, Anthropic, Google, Microsoft, Meta, Nvidia, xAI and open source; Startup opportunity map suitable for Irene; 7-day action deck.
-          If live news feeds are unavailable, write Data feed pending. Do not invent breaking news. Date: {NOW:%Y-%m-%d %H:%M} Taipei."""
-
-          def call_openai(prompt: str, label: str) -> str | None:
-              if not API_KEY:
-                  AI_STATUS.append(f"{label}: OPENAI_API_KEY missing")
-                  return None
-              payload = {"model": MODEL, "input": prompt, "max_output_tokens": 2600}
-              req = urllib.request.Request(
-                  "https://api.openai.com/v1/responses",
-                  data=json.dumps(payload).encode("utf-8"),
-                  headers={"Authorization": f"Bearer {API_KEY}", "Content-Type": "application/json"},
-                  method="POST",
-              )
+          def get_stooq(symbol):
+              url = f"https://stooq.com/q/l/?s={symbol}&f=sd2t2ohlcv&h&e=csv"
               try:
-                  with urllib.request.urlopen(req, timeout=90) as response:
-                      data = json.loads(response.read().decode("utf-8"))
-              except urllib.error.HTTPError as exc:
-                  detail = exc.read().decode("utf-8", errors="replace")[:700]
-                  AI_STATUS.append(f"{label}: HTTP {exc.code} {detail}")
+                  with urllib.request.urlopen(url, timeout=20) as r:
+                      rows = list(csv.DictReader(StringIO(r.read().decode("utf-8"))))
+                  if not rows or rows[0].get("Close") in (None, "N/D"):
+                      return None
+                  row = rows[0]
+                  return {"date": row.get("Date", ""), "close": row.get("Close", ""), "change": "", "volume": row.get("Volume", "")}
+              except Exception:
                   return None
-              except Exception as exc:
-                  AI_STATUS.append(f"{label}: {type(exc).__name__}: {exc}")
-                  return None
-              if data.get("output_text"):
-                  AI_STATUS.append(f"{label}: OpenAI generated")
-                  return str(data["output_text"]).strip()
-              parts = []
-              for item in data.get("output", []):
-                  for content in item.get("content", []):
-                      if content.get("text"):
-                          parts.append(content["text"])
-              if parts:
-                  AI_STATUS.append(f"{label}: OpenAI generated")
-                  return "\n".join(parts).strip()
-              AI_STATUS.append(f"{label}: empty OpenAI response")
-              return None
 
-          def fallback(kind: str) -> str:
-              if kind == "investment":
-                  return f"""# Investment Watch / 投資觀察
+          def get_fred(series):
+              url = f"https://fred.stlouisfed.org/graph/fredgraph.csv?id={series}"
+              try:
+                  with urllib.request.urlopen(url, timeout=20) as r:
+                      text = r.read().decode("utf-8")
+                  rows = list(csv.reader(StringIO(text)))
+                  for date, value in reversed(rows[1:]):
+                      if value and value != ".":
+                          return date, value
+              except Exception:
+                  pass
+              return "Data feed pending", "Data feed pending"
 
-          **Date:** {NOW:%Y-%m-%d %H:%M} Taipei
+          def row(cells):
+              return "<tr>" + "".join(f"<td>{html.escape(str(c))}</td>" for c in cells) + "</tr>"
 
-          **AI writer status:** OpenAI did not return a usable report this run. This readable fallback is published instead of raw API errors.
+          market_rows = []
+          for name, symbol, note in WATCH:
+              data = get_stooq(symbol)
+              if data:
+                  market_rows.append(row([name, symbol.upper(), data["date"], data["close"], data["volume"], note]))
+              else:
+                  market_rows.append(row([name, symbol.upper(), "Data feed pending", "Data feed pending", "", note]))
 
-          ## Executive dashboard / 今日總覽
-          - Priority: preserve liquidity first because fixed income is not stable and the house asset is illiquid.
-          - 優先順序：先保留流動性，因為目前固定收入不穩定，而且房產暫時不能出售。
+          macro_rows = []
+          for name, series in MACRO:
+              date, value = get_fred(series)
+              macro_rows.append(row([name, series, date, value]))
 
-          ## Macro numbers to track / 每日必看宏觀數字
-          | Area | Metrics | Status |
-          |---|---|---|
-          | Rates | Fed funds, US 2Y/10Y Treasury yields | Data feed pending |
-          | Inflation | CPI, PCE, expectations | Data feed pending |
-          | Growth/jobs | GDP, unemployment, retail sales | Data feed pending |
-          | Risk | VIX, USD/TWD, oil, gold | Data feed pending |
+          notes = [
+              "This is data-only, no AI analysis and no personalized investment advice.",
+              "Prices are intended as latest available close data from public data feeds.",
+              "Irene decides independently; this dashboard is for watchlist and risk monitoring only.",
+          ]
 
-          ## ETF watch / ETF 觀察
-          | Bucket | ETFs | Watch point |
-          |---|---|---|
-          | Cash parking | SGOV, BIL, SHV | Protect 2-3 years liquidity |
-          | Core equity | VTI, VOO, VT, SCHD | Add slowly, no chasing |
-          | Bonds | BND, AGG, VGSH | Interest-rate sensitivity |
-          | AI/semis | SMH, SOXX | Small volatile sleeve only |
-
-          ## Action checklist / 今日行動清單
-          1. Do not use retirement liquidity for the AI startup bucket.
-          2. Keep USD/TWD cash matched to expected living location.
-          3. Wait for AI writer and market data feeds before making allocation changes.
-          """
-              return f"""# AI Startup Watch / AI 創業與技術觀察
-
-          **Date:** {NOW:%Y-%m-%d %H:%M} Taipei
-
-          **AI writer status:** OpenAI did not return a usable report this run. This readable fallback is published instead of raw API errors.
-
-          ## AI startup executive summary / AI 創業總覽
-          - Irene's strongest edge is combining IT/semiconductor domain knowledge with practical AI agent workflows.
-          - Irene 的優勢是 IT/半導體經驗，加上 AI agent 實務應用。
-
-          ## Watch areas / 每日觀察方向
-          | Area | What to watch | Status |
-          |---|---|---|
-          | AI agents | Workflow automation, vertical agents, enterprise adoption | News feed pending |
-          | Models | OpenAI, Anthropic, Google, Meta, xAI, open-source | News feed pending |
-          | Semiconductors | Nvidia, TSMC, ASML, inference chips, edge AI | News feed pending |
-          | Startup ideas | B2B AI automation for semiconductor/IT consulting | Research pending |
-
-          ## 7-day action deck / 七天行動看板
-          1. Define one customer pain point from existing consulting network.
-          2. Build one AI-agent demo around a real workflow.
-          3. Interview three potential users before spending startup capital.
-          """
-
-          def inline_md(text: str) -> str:
-              return html.escape(text).replace("**", "")
-
-          def md_to_html(md: str, title: str) -> str:
-              rows = []
-              in_ul = in_ol = in_table = False
-              def close_blocks():
-                  nonlocal in_ul, in_ol, in_table
-                  out = []
-                  if in_table:
-                      out.append("</tbody></table>"); in_table = False
-                  if in_ul:
-                      out.append("</ul>"); in_ul = False
-                  if in_ol:
-                      out.append("</ol>"); in_ol = False
-                  return out
-              for raw in md.splitlines():
-                  line = raw.strip()
-                  if not line:
-                      rows.extend(close_blocks()); continue
-                  if line.startswith("# "):
-                      rows.extend(close_blocks()); rows.append(f"<h1>{inline_md(line[2:])}</h1>")
-                  elif line.startswith("## "):
-                      rows.extend(close_blocks()); rows.append(f"<h2>{inline_md(line[3:])}</h2>")
-                  elif line.startswith("### "):
-                      rows.extend(close_blocks()); rows.append(f"<h3>{inline_md(line[4:])}</h3>")
-                  elif line.startswith("- "):
-                      if not in_ul: rows.extend(close_blocks()); rows.append("<ul>"); in_ul = True
-                      rows.append(f"<li>{inline_md(line[2:])}</li>")
-                  elif re.match(r"^\d+\. ", line):
-                      if not in_ol: rows.extend(close_blocks()); rows.append("<ol>"); in_ol = True
-                      rows.append(f"<li>{inline_md(re.sub(r'^\d+\. ', '', line))}</li>")
-                  elif line.startswith("|") and line.endswith("|"):
-                      cells = [inline_md(c.strip()) for c in line.strip("|").split("|")]
-                      if all(set(c) <= {"-", ":", " "} for c in cells): continue
-                      if not in_table: rows.extend(close_blocks()); rows.append("<table><tbody>"); in_table = True; tag = "th"
-                      else: tag = "td"
-                      rows.append("<tr>" + "".join(f"<{tag}>{c}</{tag}>" for c in cells) + "</tr>")
-                  else:
-                      rows.extend(close_blocks()); rows.append(f"<p>{inline_md(line)}</p>")
-              rows.extend(close_blocks())
-              body = "\n".join(rows)
-              writer = "OpenAI API connected" if API_KEY else "fallback until OPENAI_API_KEY is added"
-              return f"""<!doctype html><html lang="zh-Hant"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>{html.escape(title)}</title><style>body{{margin:0;background:#f6f7f9;color:#1f2328;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}}main{{max-width:980px;margin:0 auto;padding:28px 16px 48px}}nav{{margin-bottom:20px}}a{{color:#0969da}}h1{{font-size:28px;line-height:1.2}}h2{{font-size:20px;margin-top:28px;border-bottom:1px solid #d8dee4;padding-bottom:6px}}h3{{font-size:17px;margin-top:20px}}p,li{{font-size:16px;line-height:1.58}}table{{width:100%;border-collapse:collapse;margin:12px 0 24px;background:#fff}}th,td{{border:1px solid #d8dee4;padding:8px 10px;text-align:left;font-size:14px}}th{{background:#eef1f4}}tr:nth-child(even) td{{background:#fafbfc}}.note{{color:#57606a;font-size:13px;margin-top:24px}}@media(max-width:720px){{main{{padding:20px 12px 36px}}table{{display:block;overflow-x:auto}}h1{{font-size:24px}}}}</style></head><body><main><nav><a href="./?v={CACHE_TAG}">Home</a> · <a href="investment.html?v={CACHE_TAG}">Investment</a> · <a href="ai-startup.html?v={CACHE_TAG}">AI Startup</a></nav>{body}<p class="note">Generated by GitHub Actions. AI writer: {writer}. No secrets are published.</p></main></body></html>"""
-
-          investment_ai = call_openai(INVESTMENT_PROMPT, "investment")
-          startup_ai = call_openai(STARTUP_PROMPT, "startup")
-          investment = investment_ai or fallback("investment")
-          startup = startup_ai or fallback("startup")
-          Path("public/investment.html").write_text(md_to_html(investment, "Investment Watch"), encoding="utf-8")
-          Path("public/ai-startup.html").write_text(md_to_html(startup, "AI Startup Watch"), encoding="utf-8")
-          if investment_ai and startup_ai:
-              writer = "OpenAI generated both reports"
-          elif API_KEY:
-              writer = "OpenAI key connected; fallback used this run"
-          else:
-              writer = "fallback until OPENAI_API_KEY secret is added"
-          index = f"""<!doctype html><html lang="zh-Hant"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Irene Daily Watch</title><style>body{{font-family:-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif;background:#f6f7f9;color:#1f2328;margin:0}}main{{max-width:820px;margin:0 auto;padding:28px 16px}}a.card{{display:block;background:white;border:1px solid #d8dee4;border-radius:8px;padding:18px;margin:14px 0;text-decoration:none;color:#1f2328}}span{{color:#57606a}}</style></head><body><main><h1>Irene Daily Watch</h1><p>{NOW:%Y-%m-%d %H:%M} Taipei</p><a class="card" href="investment.html?v={CACHE_TAG}"><h2>Investment Watch / 投資觀察</h2><span>Retirement-aware macro, ETF, liquidity and allocation watch.</span></a><a class="card" href="ai-startup.html?v={CACHE_TAG}"><h2>AI Startup Watch / AI 創業觀察</h2><span>AI agent, technology, semiconductor and startup action deck.</span></a><p>AI writer: {writer}.</p></main></body></html>"""
-          Path("public/index.html").write_text(index, encoding="utf-8")
-          status_text = "\n".join(AI_STATUS) + "\n"
-          Path("public/ai-status.txt").write_text(status_text, encoding="utf-8")
-          status_html = "<!doctype html><html><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width, initial-scale=1\"><title>AI Status</title><style>body{font-family:-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif;max-width:820px;margin:0 auto;padding:24px;line-height:1.5}pre{white-space:pre-wrap;background:#f6f7f9;border:1px solid #d8dee4;padding:12px;border-radius:8px}</style></head><body><h1>AI Status</h1><p>Generated by GitHub Actions. No secrets are shown.</p><pre>" + html.escape(status_text) + "</pre></body></html>"
-          Path("public/ai-status.html").write_text(status_html, encoding="utf-8")
-          print("AI_STATUS_START")
-          print(status_text)
-          print("AI_STATUS_END")
-          Path("line-message.txt").write_text(f"Daily Watch generated by GitHub Actions\nDate: {NOW:%Y-%m-%d %H:%M} Taipei\n\nOpen report on phone:\n{PUBLIC_BASE}/?v={CACHE_TAG}\n\nTap Investment Watch or AI Startup Watch inside the page.", encoding="utf-8")
+          page = f"""<!doctype html><html lang="zh-Hant"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Irene Market Dashboard</title><style>body{{font-family:-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif;background:#f6f7f9;color:#1f2328;margin:0}}main{{max-width:1050px;margin:0 auto;padding:24px 14px 44px}}h1{{font-size:28px}}h2{{font-size:20px;margin-top:28px;border-bottom:1px solid #d8dee4;padding-bottom:6px}}p,li{{line-height:1.55}}table{{width:100%;border-collapse:collapse;background:#fff;margin:12px 0 24px}}th,td{{border:1px solid #d8dee4;padding:8px 9px;text-align:left;font-size:14px}}th{{background:#eef1f4}}tr:nth-child(even) td{{background:#fafbfc}}.note{{background:#fff;border:1px solid #d8dee4;border-radius:8px;padding:12px}}@media(max-width:760px){{main{{padding:18px 10px 36px}}table{{display:block;overflow-x:auto}}h1{{font-size:24px}}}}</style></head><body><main><h1>Irene Daily Market Dashboard</h1><p><strong>Generated:</strong> {NOW:%Y-%m-%d %H:%M} Taipei</p><div class="note"><p><strong>Sample mode:</strong> data dashboard without OpenAI API. LINE delivers this link; email can later include the full table.</p></div><h2>Market Close Watch / 收盤價格觀察</h2><table><thead><tr><th>Name</th><th>Symbol</th><th>Latest Date</th><th>Last Close</th><th>Volume</th><th>Watch Point</th></tr></thead><tbody>{''.join(market_rows)}</tbody></table><h2>Macro Watch / 宏觀數字觀察</h2><table><thead><tr><th>Metric</th><th>Series</th><th>Latest Date</th><th>Latest Value</th></tr></thead><tbody>{''.join(macro_rows)}</tbody></table><h2>Rule-Based Watch Notes / 固定規則提醒</h2><ul>{''.join(f'<li>{html.escape(n)}</li>' for n in notes)}</ul><p>This page is for monitoring only, not financial/tax/legal advice.</p></main></body></html>"""
+          Path("public/index.html").write_text(page, encoding="utf-8")
+          Path("public/investment.html").write_text(page, encoding="utf-8")
+          Path("public/ai-startup.html").write_text("<!doctype html><html><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width, initial-scale=1\"><title>AI Startup Watch</title></head><body><main><h1>AI Startup Watch</h1><p>Data-only market sample sent first. AI startup news deck will be added after confirming delivery format.</p></main></body></html>", encoding="utf-8")
+          Path("line-message.txt").write_text(f"Irene Daily Market Dashboard\n{NOW:%Y-%m-%d %H:%M} Taipei\n\nData-only sample report is ready. No OpenAI API used.\n\nOpen report:\n{PUBLIC_BASE}/?v={CACHE_TAG}", encoding="utf-8")
           PY
 
       - name: Setup Pages
