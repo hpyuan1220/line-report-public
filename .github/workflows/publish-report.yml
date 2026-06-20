@@ -8,6 +8,7 @@ on:
   push:
     paths:
       - trigger-report.txt
+      - .github/workflows/publish-report.yml
 
 permissions:
   contents: read
@@ -31,7 +32,7 @@ jobs:
           mkdir -p public
           python3 - <<'PY'
           from __future__ import annotations
-          
+
           import datetime as dt
           import html
           import json
@@ -41,46 +42,28 @@ jobs:
           import urllib.request
           from pathlib import Path
           from zoneinfo import ZoneInfo
-          
+
           NOW = dt.datetime.now(ZoneInfo("Asia/Taipei"))
           PUBLIC_BASE = "https://hpyuan1220.github.io/line-report-public"
+          CACHE_TAG = os.environ.get("GITHUB_RUN_ID", NOW.strftime("%Y%m%d%H%M"))
           API_KEY = os.environ.get("OPENAI_API_KEY", "").strip()
           MODEL = os.environ.get("OPENAI_MODEL", "gpt-4.1-mini").strip() or "gpt-4.1-mini"
-          CACHE_TAG = os.environ.get("GITHUB_RUN_ID", NOW.strftime("%Y%m%d%H%M"))
           AI_STATUS = []
-          PROFILE = """Irene profile: 61 years old; US citizen and Taiwan citizen; wants to live between US and Taiwan for the rest of life; main illiquid house asset about USD 5M and cannot sell now; liquid cash about USD 400K plus NTD 700K plus NTD 300K insurance; no stable fixed income now, commission/consulting based; 45 years in IT and semiconductor industry, still consulting; plans about USD 100K high-risk AI startup budget for 2026-2027; wants conservative, liquidity-first retirement-aware investment monitoring plus AI startup/technology watch."""
-          
-          INVESTMENT_PROMPT = f"""You are Irene's bilingual investment watch analyst. Write a daily briefing in English and Traditional Chinese for this exact profile.
+
+          PROFILE = """Irene profile: 61 years old; US and Taiwan citizen; wants to live in both US and Taiwan; house asset about USD 5M cannot be sold now; liquid assets about USD 400K plus NTD 700K plus NTD 300K insurance; no stable fixed income, commission/consulting based; 45 years IT and semiconductor experience; plans about USD 100K high-risk AI startup budget for 2026-2027."""
+
+          INVESTMENT_PROMPT = f"""Write Irene's daily bilingual investment watch in English and Traditional Chinese.
           {PROFILE}
-          
-          Do not claim to be a licensed adviser or private bank. Produce a private-bank-style briefing quality, but clearly say it is monitoring, not formal financial/tax/legal advice. Focus on what a 61-year-old US/Taiwan dual citizen with low fixed income and high illiquid housing wealth should watch.
-          
-          Required sections:
-          1. Executive dashboard / 今日總覽
-          2. Liquidity and risk guardrails / 現金流與風險底線
-          3. Macro numbers to track / 每日必看宏觀數字: Fed funds, US 2Y/10Y yields, CPI/PCE, unemployment, GDP, USD/TWD, VIX, oil, gold. If live numbers are unavailable, label them Data feed pending instead of inventing.
-          4. Market watch / 股市觀察: S&P 500, Nasdaq 100, SOX, Taiwan semis; ETF watch SGOV/BIL, VTI/VOO, SCHD, VXUS, BND/AGG, SMH/SOXX.
-          5. Irene allocation watch / 美台資產配置觀察: discuss USD/TWD liquidity buckets, startup bucket, retirement bucket, and what not to risk.
-          6. Action checklist / 今日行動清單: Observe / Add slowly / Do not chase / Raise cash.
-          
-          Formatting: Markdown, clear headings, concise but substantive. Include source-quality note: data should come from official or market data feeds once connected; do not hallucinate exact prices. Date: {NOW:%Y-%m-%d %H:%M} Taipei."""
-          
-          STARTUP_PROMPT = f"""You are Irene's bilingual AI startup and technology watch analyst. Write a daily briefing in English and Traditional Chinese for this exact profile.
+          Do not give formal financial/tax/legal advice. Produce a private-bank-style monitoring briefing, but clearly say it is monitoring only.
+          Required sections: Executive dashboard; Liquidity and risk guardrails; Macro numbers to track including Fed funds, US 2Y/10Y yields, CPI/PCE, unemployment, GDP, USD/TWD, VIX, oil, gold; Market watch including S&P 500, Nasdaq 100, SOX, Taiwan semis; ETF watch SGOV/BIL, VTI/VOO, SCHD, VXUS, BND/AGG, SMH/SOXX; Irene allocation watch; Action checklist.
+          If live prices/data are unavailable, write Data feed pending. Do not invent exact prices. Date: {NOW:%Y-%m-%d %H:%M} Taipei."""
+
+          STARTUP_PROMPT = f"""Write Irene's daily bilingual AI startup and technology watch in English and Traditional Chinese.
           {PROFILE}
-          
-          Irene is evaluating a USD 100K AI startup budget for 2026-2027 and has deep IT/semiconductor experience. Produce a founder/investor watch deck.
-          
-          Required sections:
-          1. AI startup executive summary / AI 創業總覽
-          2. AI agent market watch / AI Agent 市場觀察
-          3. Enterprise AI and automation / 企業 AI 與自動化
-          4. Semiconductor and infrastructure implications / 半導體與基礎建設
-          5. Competitor/product watch / 競品與產品觀察: OpenAI, Anthropic, Google, Microsoft, Meta, Nvidia, xAI, major open-source models. If live news feed is not connected, say Data feed pending instead of inventing current events.
-          6. Startup opportunity map / 創業機會地圖: ideas suitable for Irene's background.
-          7. 7-day action deck / 七天行動看板: research, customer discovery, prototype, partnership, pitch.
-          
-          Formatting: Markdown, clear headings, concise but substantive. Do not fabricate breaking news; mark missing live news as feed pending. Date: {NOW:%Y-%m-%d %H:%M} Taipei."""
-          
+          Irene is evaluating a USD 100K AI startup budget for 2026-2027 and has deep IT/semiconductor experience.
+          Required sections: AI startup executive summary; AI agent market watch; Enterprise AI and automation; Semiconductor and infrastructure implications; Competitor/product watch for OpenAI, Anthropic, Google, Microsoft, Meta, Nvidia, xAI and open source; Startup opportunity map suitable for Irene; 7-day action deck.
+          If live news feeds are unavailable, write Data feed pending. Do not invent breaking news. Date: {NOW:%Y-%m-%d %H:%M} Taipei."""
+
           def call_openai(prompt: str, label: str) -> str | None:
               if not API_KEY:
                   AI_STATUS.append(f"{label}: OPENAI_API_KEY missing")
@@ -108,73 +91,74 @@ jobs:
               parts = []
               for item in data.get("output", []):
                   for content in item.get("content", []):
-                      text = content.get("text")
-                      if text:
-                          parts.append(text)
+                      if content.get("text"):
+                          parts.append(content["text"])
               if parts:
                   AI_STATUS.append(f"{label}: OpenAI generated")
-                  return "
-".join(parts).strip()
+                  return "\n".join(parts).strip()
               AI_STATUS.append(f"{label}: empty OpenAI response")
               return None
-          
+
           def fallback(kind: str) -> str:
               if kind == "investment":
                   return f"""# Investment Watch / 投資觀察
-          
-          **Date:** {NOW:%Y-%m-%d %H:%M} Taipei
-          
-          **AI writer status:** The OpenAI writer did not return a usable report in this run. This fallback keeps the dashboard readable and avoids publishing raw API errors.
-          
-          ## Executive dashboard / 今日總覽
-          - Priority: preserve liquidity first because fixed income is not stable and the house asset is illiquid.
-          - 優先順序：先保留流動性，因為目前固定收入不穩定，而且房產暫時不能出售。
-          
-          ## Macro numbers to track / 每日必看宏觀數字
-          | Area | Metrics | Status |
-          |---|---|---|
-          | Rates | Fed funds, US 2Y/10Y Treasury yields | Data feed pending |
-          | Inflation | CPI, PCE, expectations | Data feed pending |
-          | Growth/jobs | GDP, unemployment, retail sales | Data feed pending |
-          | Risk | VIX, USD/TWD, oil, gold | Data feed pending |
-          
-          ## ETF watch / ETF 觀察
-          | Bucket | ETFs | Watch point |
-          |---|---|---|
-          | Cash parking | SGOV, BIL, SHV | Protect 2-3 years liquidity |
-          | Core equity | VTI, VOO, VT, SCHD | Add slowly, no chasing |
-          | Bonds | BND, AGG, VGSH | Interest-rate sensitivity |
-          | AI/semis | SMH, SOXX | Small volatile sleeve only |
-          
-          ## Action checklist / 今日行動清單
-          1. Do not use retirement liquidity for the AI startup bucket.
-          2. Keep USD/TWD cash matched to expected living location.
-          3. Wait for AI writer and market data feeds before making allocation changes.
-          """
+
+**Date:** {NOW:%Y-%m-%d %H:%M} Taipei
+
+**AI writer status:** OpenAI did not return a usable report this run. This readable fallback is published instead of raw API errors.
+
+## Executive dashboard / 今日總覽
+- Priority: preserve liquidity first because fixed income is not stable and the house asset is illiquid.
+- 優先順序：先保留流動性，因為目前固定收入不穩定，而且房產暫時不能出售。
+
+## Macro numbers to track / 每日必看宏觀數字
+| Area | Metrics | Status |
+|---|---|---|
+| Rates | Fed funds, US 2Y/10Y Treasury yields | Data feed pending |
+| Inflation | CPI, PCE, expectations | Data feed pending |
+| Growth/jobs | GDP, unemployment, retail sales | Data feed pending |
+| Risk | VIX, USD/TWD, oil, gold | Data feed pending |
+
+## ETF watch / ETF 觀察
+| Bucket | ETFs | Watch point |
+|---|---|---|
+| Cash parking | SGOV, BIL, SHV | Protect 2-3 years liquidity |
+| Core equity | VTI, VOO, VT, SCHD | Add slowly, no chasing |
+| Bonds | BND, AGG, VGSH | Interest-rate sensitivity |
+| AI/semis | SMH, SOXX | Small volatile sleeve only |
+
+## Action checklist / 今日行動清單
+1. Do not use retirement liquidity for the AI startup bucket.
+2. Keep USD/TWD cash matched to expected living location.
+3. Wait for AI writer and market data feeds before making allocation changes.
+"""
               return f"""# AI Startup Watch / AI 創業與技術觀察
-          
-          **Date:** {NOW:%Y-%m-%d %H:%M} Taipei
-          
-          **AI writer status:** The OpenAI writer did not return a usable report in this run. This fallback keeps the dashboard readable and avoids publishing raw API errors.
-          
-          ## AI startup executive summary / AI 創業總覽
-          - Irene's strongest edge is combining 45 years of IT/semiconductor domain knowledge with practical AI agent workflows.
-          - Irene 的優勢是 IT/半導體 45 年經驗，加上 AI agent 實務應用。
-          
-          ## Watch areas / 每日觀察方向
-          | Area | What to watch | Status |
-          |---|---|---|
-          | AI agents | Workflow automation, vertical agents, enterprise adoption | News feed pending |
-          | Models | OpenAI, Anthropic, Google, Meta, xAI, open-source | News feed pending |
-          | Semiconductors | Nvidia, TSMC, ASML, inference chips, edge AI | News feed pending |
-          | Startup ideas | B2B AI automation for semiconductor/IT consulting | Research pending |
-          
-          ## 7-day action deck / 七天行動看板
-          1. Define one customer pain point from existing consulting network.
-          2. Build one AI-agent demo around a real workflow.
-          3. Interview three potential users before spending startup capital.
-          """
-          
+
+**Date:** {NOW:%Y-%m-%d %H:%M} Taipei
+
+**AI writer status:** OpenAI did not return a usable report this run. This readable fallback is published instead of raw API errors.
+
+## AI startup executive summary / AI 創業總覽
+- Irene's strongest edge is combining IT/semiconductor domain knowledge with practical AI agent workflows.
+- Irene 的優勢是 IT/半導體經驗，加上 AI agent 實務應用。
+
+## Watch areas / 每日觀察方向
+| Area | What to watch | Status |
+|---|---|---|
+| AI agents | Workflow automation, vertical agents, enterprise adoption | News feed pending |
+| Models | OpenAI, Anthropic, Google, Meta, xAI, open-source | News feed pending |
+| Semiconductors | Nvidia, TSMC, ASML, inference chips, edge AI | News feed pending |
+| Startup ideas | B2B AI automation for semiconductor/IT consulting | Research pending |
+
+## 7-day action deck / 七天行動看板
+1. Define one customer pain point from existing consulting network.
+2. Build one AI-agent demo around a real workflow.
+3. Interview three potential users before spending startup capital.
+"""
+
+          def inline_md(text: str) -> str:
+              return html.escape(text).replace("**", "")
+
           def md_to_html(md: str, title: str) -> str:
               rows = []
               in_ul = in_ol = in_table = False
@@ -193,38 +177,30 @@ jobs:
                   if not line:
                       rows.extend(close_blocks()); continue
                   if line.startswith("# "):
-                      rows.extend(close_blocks()); rows.append(f"<h1>{html.escape(line[2:])}</h1>")
+                      rows.extend(close_blocks()); rows.append(f"<h1>{inline_md(line[2:])}</h1>")
                   elif line.startswith("## "):
-                      rows.extend(close_blocks()); rows.append(f"<h2>{html.escape(line[3:])}</h2>")
+                      rows.extend(close_blocks()); rows.append(f"<h2>{inline_md(line[3:])}</h2>")
                   elif line.startswith("### "):
-                      rows.extend(close_blocks()); rows.append(f"<h3>{html.escape(line[4:])}</h3>")
+                      rows.extend(close_blocks()); rows.append(f"<h3>{inline_md(line[4:])}</h3>")
                   elif line.startswith("- "):
                       if not in_ul: rows.extend(close_blocks()); rows.append("<ul>"); in_ul = True
-                      rows.append(f"<li>{html.escape(line[2:])}</li>")
-                  elif re.match(r"^d+. ", line):
+                      rows.append(f"<li>{inline_md(line[2:])}</li>")
+                  elif re.match(r"^\d+\. ", line):
                       if not in_ol: rows.extend(close_blocks()); rows.append("<ol>"); in_ol = True
-                      rows.append(f"<li>{html.escape(re.sub(r'^d+. ', '', line))}</li>")
+                      rows.append(f"<li>{inline_md(re.sub(r'^\d+\. ', '', line))}</li>")
                   elif line.startswith("|") and line.endswith("|"):
-                      cells = [html.escape(c.strip()) for c in line.strip("|").split("|")]
+                      cells = [inline_md(c.strip()) for c in line.strip("|").split("|")]
                       if all(set(c) <= {"-", ":", " "} for c in cells): continue
                       if not in_table: rows.extend(close_blocks()); rows.append("<table><tbody>"); in_table = True; tag = "th"
                       else: tag = "td"
                       rows.append("<tr>" + "".join(f"<{tag}>{c}</{tag}>" for c in cells) + "</tr>")
                   else:
-                      rows.extend(close_blocks())
-                      safe = html.escape(line).replace("**", "")
-                      rows.append(f"<p>{safe}</p>")
+                      rows.extend(close_blocks()); rows.append(f"<p>{inline_md(line)}</p>")
               rows.extend(close_blocks())
-              body = "
-".join(rows)
+              body = "\n".join(rows)
               writer = "OpenAI API connected" if API_KEY else "fallback until OPENAI_API_KEY is added"
-              return f"""<!doctype html>
-          <html lang="zh-Hant"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-          <title>{html.escape(title)}</title>
-          <style>body{{margin:0;background:#f6f7f9;color:#1f2328;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}}main{{max-width:980px;margin:0 auto;padding:28px 16px 48px}}nav{{margin-bottom:20px}}a{{color:#0969da}}h1{{font-size:28px;line-height:1.2}}h2{{font-size:20px;margin-top:28px;border-bottom:1px solid #d8dee4;padding-bottom:6px}}h3{{font-size:17px;margin-top:20px}}p,li{{font-size:16px;line-height:1.58}}table{{width:100%;border-collapse:collapse;margin:12px 0 24px;background:#fff}}th,td{{border:1px solid #d8dee4;padding:8px 10px;text-align:left;font-size:14px}}th{{background:#eef1f4}}tr:nth-child(even) td{{background:#fafbfc}}.note{{color:#57606a;font-size:13px;margin-top:24px}}@media(max-width:720px){{main{{padding:20px 12px 36px}}table{{display:block;overflow-x:auto}}h1{{font-size:24px}}}}</style>
-          </head><body><main><nav><a href="./?v={CACHE_TAG}">Home</a> · <a href="investment.html?v={CACHE_TAG}">Investment</a> · <a href="ai-startup.html?v={CACHE_TAG}">AI Startup</a></nav>
-          {body}<p class="note">Generated by GitHub Actions. AI writer: {writer}. No secrets are published.</p></main></body></html>"""
-          
+              return f"""<!doctype html><html lang="zh-Hant"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>{html.escape(title)}</title><style>body{{margin:0;background:#f6f7f9;color:#1f2328;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}}main{{max-width:980px;margin:0 auto;padding:28px 16px 48px}}nav{{margin-bottom:20px}}a{{color:#0969da}}h1{{font-size:28px;line-height:1.2}}h2{{font-size:20px;margin-top:28px;border-bottom:1px solid #d8dee4;padding-bottom:6px}}h3{{font-size:17px;margin-top:20px}}p,li{{font-size:16px;line-height:1.58}}table{{width:100%;border-collapse:collapse;margin:12px 0 24px;background:#fff}}th,td{{border:1px solid #d8dee4;padding:8px 10px;text-align:left;font-size:14px}}th{{background:#eef1f4}}tr:nth-child(even) td{{background:#fafbfc}}.note{{color:#57606a;font-size:13px;margin-top:24px}}@media(max-width:720px){{main{{padding:20px 12px 36px}}table{{display:block;overflow-x:auto}}h1{{font-size:24px}}}}</style></head><body><main><nav><a href="./?v={CACHE_TAG}">Home</a> · <a href="investment.html?v={CACHE_TAG}">Investment</a> · <a href="ai-startup.html?v={CACHE_TAG}">AI Startup</a></nav>{body}<p class="note">Generated by GitHub Actions. AI writer: {writer}. No secrets are published.</p></main></body></html>"""
+
           investment = call_openai(INVESTMENT_PROMPT, "investment") or fallback("investment")
           startup = call_openai(STARTUP_PROMPT, "startup") or fallback("startup")
           Path("public/investment.html").write_text(md_to_html(investment, "Investment Watch"), encoding="utf-8")
@@ -232,16 +208,8 @@ jobs:
           writer = "OpenAI API connected" if API_KEY else "fallback until OPENAI_API_KEY secret is added"
           index = f"""<!doctype html><html lang="zh-Hant"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Irene Daily Watch</title><style>body{{font-family:-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif;background:#f6f7f9;color:#1f2328;margin:0}}main{{max-width:820px;margin:0 auto;padding:28px 16px}}a.card{{display:block;background:white;border:1px solid #d8dee4;border-radius:8px;padding:18px;margin:14px 0;text-decoration:none;color:#1f2328}}span{{color:#57606a}}</style></head><body><main><h1>Irene Daily Watch</h1><p>{NOW:%Y-%m-%d %H:%M} Taipei</p><a class="card" href="investment.html?v={CACHE_TAG}"><h2>Investment Watch / 投資觀察</h2><span>Retirement-aware macro, ETF, liquidity and allocation watch.</span></a><a class="card" href="ai-startup.html?v={CACHE_TAG}"><h2>AI Startup Watch / AI 創業觀察</h2><span>AI agent, technology, semiconductor and startup action deck.</span></a><p>AI writer: {writer}.</p></main></body></html>"""
           Path("public/index.html").write_text(index, encoding="utf-8")
-          Path("line-message.txt").write_text(f"Daily Watch generated by GitHub Actions
-Date: {NOW:%Y-%m-%d %H:%M} Taipei
-
-Open report on phone:
-{PUBLIC_BASE}/?v={CACHE_TAG}
-
-Tap Investment Watch or AI Startup Watch inside the page.", encoding="utf-8")
-          Path("public/ai-status.txt").write_text("
-".join(AI_STATUS) + "
-", encoding="utf-8")
+          Path("public/ai-status.txt").write_text("\n".join(AI_STATUS) + "\n", encoding="utf-8")
+          Path("line-message.txt").write_text(f"Daily Watch generated by GitHub Actions\nDate: {NOW:%Y-%m-%d %H:%M} Taipei\n\nOpen report on phone:\n{PUBLIC_BASE}/?v={CACHE_TAG}\n\nTap Investment Watch or AI Startup Watch inside the page.", encoding="utf-8")
           PY
 
       - name: Setup Pages
