@@ -23,7 +23,7 @@ jobs:
   publish:
     runs-on: ubuntu-latest
     steps:
-      - name: Generate Chinese data-only market dashboard
+      - name: Generate Schwab watchlist market dashboard
         run: |
           set -euo pipefail
           mkdir -p public
@@ -42,19 +42,52 @@ jobs:
           PUBLIC_BASE = "https://hpyuan1220.github.io/line-report-public"
           CACHE_TAG = os.environ.get("GITHUB_RUN_ID", NOW.strftime("%Y%m%d%H%M"))
 
-          WATCH = [
-              ("S&P 500 ETF", "SPY", "美股核心大盤代表"),
-              ("Nasdaq 100 ETF", "QQQ", "科技/成長股代表"),
-              ("Semiconductor ETF", "SMH", "AI 與半導體風險觀察"),
-              ("Total US Market", "VTI", "美股整體市場"),
-              ("S&P 500 Core", "VOO", "核心美股配置觀察"),
-              ("Dividend Equity", "SCHD", "股息品質觀察"),
-              ("Short Treasury", "SGOV", "短債/現金停泊觀察"),
-              ("US Aggregate Bond", "BND", "債券 ETF 利率敏感度"),
-              ("Nvidia", "NVDA", "AI 基礎建設指標股"),
-              ("TSMC ADR", "TSM", "台積電 ADR / 半導體指標"),
-              ("Apple", "AAPL", "大型科技消費需求觀察"),
-              ("Microsoft", "MSFT", "企業 AI 與雲端需求觀察"),
+          WATCH_GROUPS = {
+              "Irene AI Stock / Irene AI 股票": [
+                  ("MSFT", "Microsoft / 企業 AI 與雲端"),
+                  ("NVDA", "Nvidia / AI GPU 與基礎建設"),
+                  ("AVGO", "Broadcom / AI networking 與晶片"),
+                  ("GOOGL", "Google / AI search 與雲端"),
+                  ("AMZN", "Amazon / AWS 與 AI infrastructure"),
+                  ("AAPL", "Apple / 消費科技與 AI device"),
+                  ("TSM", "TSMC ADR / 半導體製造"),
+                  ("ASML", "ASML / 半導體設備"),
+                  ("AMD", "AMD / AI GPU 競爭"),
+                  ("V", "Visa / 支付網路與消費觀察"),
+              ],
+              "Irene Core ETF / Irene 核心 ETF": [
+                  ("VTI", "美股整體市場"),
+                  ("VOO", "S&P 500 核心配置"),
+                  ("VT", "全球股票配置"),
+                  ("VXUS", "美國以外股票"),
+                  ("SCHD", "股息品質"),
+                  ("QUAL", "品質因子 ETF"),
+                  ("SGOV", "短債/現金停泊"),
+                  ("BIL", "短期 T-Bill"),
+                  ("SMH", "半導體主題"),
+                  ("SOXX", "半導體主題"),
+              ],
+              "Irene Short income / Irene 短期收益": [
+                  ("SGOV", "0-3 月短債/現金停泊"),
+                  ("BIL", "1-3 月 T-Bill"),
+                  ("SHV", "短期 Treasury ETF"),
+                  ("VGSH", "Vanguard 短期 Treasury"),
+                  ("SHY", "1-3 年 Treasury"),
+                  ("VTIP", "短期抗通膨債"),
+                  ("BND", "美國總體債券"),
+                  ("AGG", "美國總體債券"),
+                  ("VCIT", "中期公司債"),
+                  ("TIP", "抗通膨債券"),
+              ],
+          }
+
+          OSCAR_LIST = [
+              (1, "IREN", 56.00, 58.00),
+              (2, "CLSK", 15.50, 16.50),
+              (3, "APLD", 42.00, 44.00),
+              (4, "RIOT", 25.00, 26.00),
+              (5, "SHAZ", 62.00, 65.00),
+              (6, "TE", 8.50, 9.50),
           ]
 
           MACRO = [
@@ -94,7 +127,7 @@ jobs:
                       if prev:
                           change = f"{((close - prev) / prev) * 100:.2f}%"
                   return {"date": date, "close": f"{close:.2f}", "change": change, "volume": vol, "currency": currency}
-              except Exception as exc:
+              except Exception:
                   return None
 
           def fred_latest(series):
@@ -115,27 +148,15 @@ jobs:
           def tr(cells):
               return "<tr>" + "".join(td(c) for c in cells) + "</tr>"
 
-          market_rows = []
-          for name, symbol, note in WATCH:
+          def quote_row(symbol, note):
               q = yahoo_quote(symbol)
               if q:
-                  market_rows.append(tr([name, symbol, q["date"], q["currency"], q["close"], q["change"], q["volume"], note]))
-              else:
-                  market_rows.append(tr([name, symbol, "資料源暫缺", "USD", "資料源暫缺", "", "", note]))
+                  return tr([symbol, q["date"], q["currency"], q["close"], q["change"], q["volume"], note])
+              return tr([symbol, "資料源暫缺", "USD", "資料源暫缺", "", "", note])
 
-          macro_rows = []
-          for zh, en, series in MACRO:
-              date, value = fred_latest(series)
-              macro_rows.append(tr([zh, en, series, date, value]))
-
-          OSCAR_LIST = [
-              (1, "IREN", 56.00, 58.00),
-              (2, "CLSK", 15.50, 16.50),
-              (3, "APLD", 42.00, 44.00),
-              (4, "RIOT", 25.00, 26.00),
-              (5, "SHAZ", 62.00, 65.00),
-              (6, "TE", 8.50, 9.50),
-          ]
+          def watch_group_html(title, items):
+              rows = "".join(quote_row(symbol, note) for symbol, note in items)
+              return f"<h2>{html.escape(title)}</h2><table><thead><tr><th>代號</th><th>最新日期</th><th>幣別</th><th>收盤價</th><th>日變動</th><th>成交量</th><th>觀察重點</th></tr></thead><tbody>{rows}</tbody></table>"
 
           def oscar_status(close, low, high):
               if close is None:
@@ -160,18 +181,26 @@ jobs:
                   else:
                       rows.append(tr([rank, symbol, range_text, "資料源暫缺", "USD", "資料源暫缺", "", "資料暫缺，請確認 ticker 是否正確"]))
               return "".join(rows)
+
+          macro_rows = []
+          for zh, en, series in MACRO:
+              date, value = fred_latest(series)
+              macro_rows.append(tr([zh, en, series, date, value]))
+
+          group_sections = "".join(watch_group_html(title, items) for title, items in WATCH_GROUPS.items())
           rules = [
+              "Schwab watchlist 只保存股票代號與清單名稱，不保存帳戶號碼或持倉數量。",
               "這是 data-only 報告：不使用 OpenAI API、不產生 AI 投資建議。",
               "價格欄位以公開資料源的最新可得收盤價為主，通常是上一個美股交易日。",
               "宏觀數字使用 FRED 公開資料；CPI、PCE、非農、失業率不是每日更新，會顯示最新公布月份。",
               "此報告只做 watchlist 與風險監控，不是財務、稅務或法律建議；是否買賣由 Irene 自己決定。",
           ]
 
-          page = f"""<!doctype html><html lang="zh-Hant"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Irene 每日市場儀表板</title><style>body{{font-family:-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif;background:#f6f7f9;color:#1f2328;margin:0}}main{{max-width:1100px;margin:0 auto;padding:24px 14px 44px}}h1{{font-size:28px}}h2{{font-size:20px;margin-top:28px;border-bottom:1px solid #d8dee4;padding-bottom:6px}}p,li{{line-height:1.58}}table{{width:100%;border-collapse:collapse;background:#fff;margin:12px 0 24px}}th,td{{border:1px solid #d8dee4;padding:8px 9px;text-align:left;font-size:14px}}th{{background:#eef1f4}}tr:nth-child(even) td{{background:#fafbfc}}.note{{background:#fff;border:1px solid #d8dee4;border-radius:8px;padding:12px}}@media(max-width:760px){{main{{padding:18px 10px 36px}}table{{display:block;overflow-x:auto}}h1{{font-size:24px}}}}</style></head><body><main><h1>Irene 每日市場儀表板</h1><p><strong>產生時間：</strong>{NOW:%Y-%m-%d %H:%M} 台北時間</p><div class="note"><p><strong>範例模式：</strong>中文 data-only 報告，不使用 OpenAI API。LINE 只推短訊息與連結；完整表格在此頁閱讀。</p></div><h2>收盤價格觀察 / Market Close Watch</h2><table><thead><tr><th>名稱</th><th>代號</th><th>最新日期</th><th>幣別</th><th>收盤價</th><th>日變動</th><th>成交量</th><th>觀察重點</th></tr></thead><tbody>{''.join(market_rows)}</tbody></table><h2>宏觀數字觀察 / Macro Watch</h2><table><thead><tr><th>中文指標</th><th>英文指標</th><th>資料代號</th><th>最新日期</th><th>最新數值</th></tr></thead><tbody>{''.join(macro_rows)}</tbody></table><h2>Oscar Watch List / Oscar 建議價位觀察</h2><p>來源：Irene 朋友 Oscar 提供。這是觀察清單，不是自動買賣建議。</p><table><thead><tr><th>順序</th><th>股票代號</th><th>Oscar 建議價位區間</th><th>最新日期</th><th>幣別</th><th>最新收盤價</th><th>日變動</th><th>狀態</th></tr></thead><tbody>{oscar_rows()}</tbody></table><h2>固定規則提醒 / Rule-Based Notes</h2><ul>{''.join(f'<li>{html.escape(r)}</li>' for r in rules)}</ul></main></body></html>"""
+          page = f"""<!doctype html><html lang="zh-Hant"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Irene 每日市場儀表板</title><style>body{{font-family:-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif;background:#f6f7f9;color:#1f2328;margin:0}}main{{max-width:1120px;margin:0 auto;padding:24px 14px 44px}}h1{{font-size:28px}}h2{{font-size:20px;margin-top:28px;border-bottom:1px solid #d8dee4;padding-bottom:6px}}p,li{{line-height:1.58}}table{{width:100%;border-collapse:collapse;background:#fff;margin:12px 0 24px}}th,td{{border:1px solid #d8dee4;padding:8px 9px;text-align:left;font-size:14px}}th{{background:#eef1f4}}tr:nth-child(even) td{{background:#fafbfc}}.note{{background:#fff;border:1px solid #d8dee4;border-radius:8px;padding:12px}}@media(max-width:760px){{main{{padding:18px 10px 36px}}table{{display:block;overflow-x:auto}}h1{{font-size:24px}}}}</style></head><body><main><h1>Irene 每日市場儀表板</h1><p><strong>產生時間：</strong>{NOW:%Y-%m-%d %H:%M} 台北時間</p><div class="note"><p><strong>資料來源：</strong>Schwab 自訂 watchlist 代號 + 公開市場收盤價 + FRED 宏觀數字。不使用 OpenAI API。</p></div>{group_sections}<h2>Oscar Watch List / Oscar 建議價位觀察</h2><p>來源：Irene 朋友 Oscar 提供。這是觀察清單，不是自動買賣建議。</p><table><thead><tr><th>順序</th><th>股票代號</th><th>Oscar 建議價位區間</th><th>最新日期</th><th>幣別</th><th>最新收盤價</th><th>日變動</th><th>狀態</th></tr></thead><tbody>{oscar_rows()}</tbody></table><h2>宏觀數字觀察 / Macro Watch</h2><table><thead><tr><th>中文指標</th><th>英文指標</th><th>資料代號</th><th>最新日期</th><th>最新數值</th></tr></thead><tbody>{''.join(macro_rows)}</tbody></table><h2>固定規則提醒 / Rule-Based Notes</h2><ul>{''.join(f'<li>{html.escape(r)}</li>' for r in rules)}</ul></main></body></html>"""
           Path("public/index.html").write_text(page, encoding="utf-8")
           Path("public/investment.html").write_text(page, encoding="utf-8")
-          Path("public/ai-startup.html").write_text("<!doctype html><html lang=\"zh-Hant\"><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width, initial-scale=1\"><title>AI 創業觀察</title></head><body><main><h1>AI 創業觀察</h1><p>目前先測試 data-only 市場儀表板。確認 LINE/手機閱讀格式後，再加入 AI startup 新聞資料源。</p></main></body></html>", encoding="utf-8")
-          Path("line-message.txt").write_text(f"Irene 每日市場儀表板\n{NOW:%Y-%m-%d %H:%M} 台北時間\n\n中文 data-only 報告已更新，已加入 Oscar watch list。\n不使用 OpenAI API。\n\n打開報告：\n{PUBLIC_BASE}/?v={CACHE_TAG}", encoding="utf-8")
+          Path("public/ai-startup.html").write_text("<!doctype html><html lang=\"zh-Hant\"><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width, initial-scale=1\"><title>AI 創業觀察</title></head><body><main><h1>AI 創業觀察</h1><p>目前先保存 Schwab watchlist 到 data-only 市場儀表板。AI startup 新聞資料源可下一步加入。</p></main></body></html>", encoding="utf-8")
+          Path("line-message.txt").write_text(f"Irene 每日市場儀表板\n{NOW:%Y-%m-%d %H:%M} 台北時間\n\n已加入 Schwab 自訂 watchlist：AI Stock、Core ETF、Short income、Oscar。\n不使用 OpenAI API。\n\n打開報告：\n{PUBLIC_BASE}/?v={CACHE_TAG}", encoding="utf-8")
           PY
 
       - name: Setup Pages
