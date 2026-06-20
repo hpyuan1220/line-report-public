@@ -128,6 +128,38 @@ jobs:
               date, value = fred_latest(series)
               macro_rows.append(tr([zh, en, series, date, value]))
 
+          OSCAR_LIST = [
+              (1, "IREN", 56.00, 58.00),
+              (2, "CLSK", 15.50, 16.50),
+              (3, "APLD", 42.00, 44.00),
+              (4, "RIOT", 25.00, 26.00),
+              (5, "SHAZ", 62.00, 65.00),
+              (6, "TE", 8.50, 9.50),
+          ]
+
+          def oscar_status(close, low, high):
+              if close is None:
+                  return "資料暫缺"
+              if close < low:
+                  return "低於 Oscar 區間"
+              if close > high:
+                  return "高於 Oscar 區間"
+              return "在 Oscar 區間內"
+
+          def oscar_rows():
+              rows = []
+              for rank, symbol, low, high in OSCAR_LIST:
+                  q = yahoo_quote(symbol)
+                  range_text = "$" + format(low, ".2f") + " - $" + format(high, ".2f")
+                  if q:
+                      try:
+                          close = float(q["close"])
+                      except Exception:
+                          close = None
+                      rows.append(tr([rank, symbol, range_text, q["date"], q["currency"], q["close"], q["change"], oscar_status(close, low, high)]))
+                  else:
+                      rows.append(tr([rank, symbol, range_text, "資料源暫缺", "USD", "資料源暫缺", "", "資料暫缺，請確認 ticker 是否正確"]))
+              return "".join(rows)
           rules = [
               "這是 data-only 報告：不使用 OpenAI API、不產生 AI 投資建議。",
               "價格欄位以公開資料源的最新可得收盤價為主，通常是上一個美股交易日。",
@@ -135,11 +167,11 @@ jobs:
               "此報告只做 watchlist 與風險監控，不是財務、稅務或法律建議；是否買賣由 Irene 自己決定。",
           ]
 
-          page = f"""<!doctype html><html lang="zh-Hant"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Irene 每日市場儀表板</title><style>body{{font-family:-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif;background:#f6f7f9;color:#1f2328;margin:0}}main{{max-width:1100px;margin:0 auto;padding:24px 14px 44px}}h1{{font-size:28px}}h2{{font-size:20px;margin-top:28px;border-bottom:1px solid #d8dee4;padding-bottom:6px}}p,li{{line-height:1.58}}table{{width:100%;border-collapse:collapse;background:#fff;margin:12px 0 24px}}th,td{{border:1px solid #d8dee4;padding:8px 9px;text-align:left;font-size:14px}}th{{background:#eef1f4}}tr:nth-child(even) td{{background:#fafbfc}}.note{{background:#fff;border:1px solid #d8dee4;border-radius:8px;padding:12px}}@media(max-width:760px){{main{{padding:18px 10px 36px}}table{{display:block;overflow-x:auto}}h1{{font-size:24px}}}}</style></head><body><main><h1>Irene 每日市場儀表板</h1><p><strong>產生時間：</strong>{NOW:%Y-%m-%d %H:%M} 台北時間</p><div class="note"><p><strong>範例模式：</strong>中文 data-only 報告，不使用 OpenAI API。LINE 只推短訊息與連結；完整表格在此頁閱讀。</p></div><h2>收盤價格觀察 / Market Close Watch</h2><table><thead><tr><th>名稱</th><th>代號</th><th>最新日期</th><th>幣別</th><th>收盤價</th><th>日變動</th><th>成交量</th><th>觀察重點</th></tr></thead><tbody>{''.join(market_rows)}</tbody></table><h2>宏觀數字觀察 / Macro Watch</h2><table><thead><tr><th>中文指標</th><th>英文指標</th><th>資料代號</th><th>最新日期</th><th>最新數值</th></tr></thead><tbody>{''.join(macro_rows)}</tbody></table><h2>固定規則提醒 / Rule-Based Notes</h2><ul>{''.join(f'<li>{html.escape(r)}</li>' for r in rules)}</ul></main></body></html>"""
+          page = f"""<!doctype html><html lang="zh-Hant"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Irene 每日市場儀表板</title><style>body{{font-family:-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif;background:#f6f7f9;color:#1f2328;margin:0}}main{{max-width:1100px;margin:0 auto;padding:24px 14px 44px}}h1{{font-size:28px}}h2{{font-size:20px;margin-top:28px;border-bottom:1px solid #d8dee4;padding-bottom:6px}}p,li{{line-height:1.58}}table{{width:100%;border-collapse:collapse;background:#fff;margin:12px 0 24px}}th,td{{border:1px solid #d8dee4;padding:8px 9px;text-align:left;font-size:14px}}th{{background:#eef1f4}}tr:nth-child(even) td{{background:#fafbfc}}.note{{background:#fff;border:1px solid #d8dee4;border-radius:8px;padding:12px}}@media(max-width:760px){{main{{padding:18px 10px 36px}}table{{display:block;overflow-x:auto}}h1{{font-size:24px}}}}</style></head><body><main><h1>Irene 每日市場儀表板</h1><p><strong>產生時間：</strong>{NOW:%Y-%m-%d %H:%M} 台北時間</p><div class="note"><p><strong>範例模式：</strong>中文 data-only 報告，不使用 OpenAI API。LINE 只推短訊息與連結；完整表格在此頁閱讀。</p></div><h2>收盤價格觀察 / Market Close Watch</h2><table><thead><tr><th>名稱</th><th>代號</th><th>最新日期</th><th>幣別</th><th>收盤價</th><th>日變動</th><th>成交量</th><th>觀察重點</th></tr></thead><tbody>{''.join(market_rows)}</tbody></table><h2>宏觀數字觀察 / Macro Watch</h2><table><thead><tr><th>中文指標</th><th>英文指標</th><th>資料代號</th><th>最新日期</th><th>最新數值</th></tr></thead><tbody>{''.join(macro_rows)}</tbody></table><h2>Oscar Watch List / Oscar 建議價位觀察</h2><p>來源：Irene 朋友 Oscar 提供。這是觀察清單，不是自動買賣建議。</p><table><thead><tr><th>順序</th><th>股票代號</th><th>Oscar 建議價位區間</th><th>最新日期</th><th>幣別</th><th>最新收盤價</th><th>日變動</th><th>狀態</th></tr></thead><tbody>{oscar_rows()}</tbody></table><h2>固定規則提醒 / Rule-Based Notes</h2><ul>{''.join(f'<li>{html.escape(r)}</li>' for r in rules)}</ul></main></body></html>"""
           Path("public/index.html").write_text(page, encoding="utf-8")
           Path("public/investment.html").write_text(page, encoding="utf-8")
           Path("public/ai-startup.html").write_text("<!doctype html><html lang=\"zh-Hant\"><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width, initial-scale=1\"><title>AI 創業觀察</title></head><body><main><h1>AI 創業觀察</h1><p>目前先測試 data-only 市場儀表板。確認 LINE/手機閱讀格式後，再加入 AI startup 新聞資料源。</p></main></body></html>", encoding="utf-8")
-          Path("line-message.txt").write_text(f"Irene 每日市場儀表板\n{NOW:%Y-%m-%d %H:%M} 台北時間\n\n中文 data-only 範例報告已更新。\n不使用 OpenAI API。\n\n打開報告：\n{PUBLIC_BASE}/?v={CACHE_TAG}", encoding="utf-8")
+          Path("line-message.txt").write_text(f"Irene 每日市場儀表板\n{NOW:%Y-%m-%d %H:%M} 台北時間\n\n中文 data-only 報告已更新，已加入 Oscar watch list。\n不使用 OpenAI API。\n\n打開報告：\n{PUBLIC_BASE}/?v={CACHE_TAG}", encoding="utf-8")
           PY
 
       - name: Setup Pages
