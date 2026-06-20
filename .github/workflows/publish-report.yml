@@ -143,10 +143,14 @@ jobs:
               return "資料源暫缺", "資料源暫缺"
 
           def change_class(value):
-              text = str(value).strip()
-              if text.startswith("+"):
+              text = str(value).strip().replace("%", "")
+              try:
+                  number = float(text)
+              except Exception:
+                  return "flat"
+              if number > 0:
                   return "up"
-              if text.startswith("-"):
+              if number < 0:
                   return "down"
               return "flat"
 
