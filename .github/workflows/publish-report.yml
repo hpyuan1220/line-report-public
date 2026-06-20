@@ -103,58 +103,58 @@ jobs:
               if kind == "investment":
                   return f"""# Investment Watch / 投資觀察
 
-**Date:** {NOW:%Y-%m-%d %H:%M} Taipei
+          **Date:** {NOW:%Y-%m-%d %H:%M} Taipei
 
-**AI writer status:** OpenAI did not return a usable report this run. This readable fallback is published instead of raw API errors.
+          **AI writer status:** OpenAI did not return a usable report this run. This readable fallback is published instead of raw API errors.
 
-## Executive dashboard / 今日總覽
-- Priority: preserve liquidity first because fixed income is not stable and the house asset is illiquid.
-- 優先順序：先保留流動性，因為目前固定收入不穩定，而且房產暫時不能出售。
+          ## Executive dashboard / 今日總覽
+          - Priority: preserve liquidity first because fixed income is not stable and the house asset is illiquid.
+          - 優先順序：先保留流動性，因為目前固定收入不穩定，而且房產暫時不能出售。
 
-## Macro numbers to track / 每日必看宏觀數字
-| Area | Metrics | Status |
-|---|---|---|
-| Rates | Fed funds, US 2Y/10Y Treasury yields | Data feed pending |
-| Inflation | CPI, PCE, expectations | Data feed pending |
-| Growth/jobs | GDP, unemployment, retail sales | Data feed pending |
-| Risk | VIX, USD/TWD, oil, gold | Data feed pending |
+          ## Macro numbers to track / 每日必看宏觀數字
+          | Area | Metrics | Status |
+          |---|---|---|
+          | Rates | Fed funds, US 2Y/10Y Treasury yields | Data feed pending |
+          | Inflation | CPI, PCE, expectations | Data feed pending |
+          | Growth/jobs | GDP, unemployment, retail sales | Data feed pending |
+          | Risk | VIX, USD/TWD, oil, gold | Data feed pending |
 
-## ETF watch / ETF 觀察
-| Bucket | ETFs | Watch point |
-|---|---|---|
-| Cash parking | SGOV, BIL, SHV | Protect 2-3 years liquidity |
-| Core equity | VTI, VOO, VT, SCHD | Add slowly, no chasing |
-| Bonds | BND, AGG, VGSH | Interest-rate sensitivity |
-| AI/semis | SMH, SOXX | Small volatile sleeve only |
+          ## ETF watch / ETF 觀察
+          | Bucket | ETFs | Watch point |
+          |---|---|---|
+          | Cash parking | SGOV, BIL, SHV | Protect 2-3 years liquidity |
+          | Core equity | VTI, VOO, VT, SCHD | Add slowly, no chasing |
+          | Bonds | BND, AGG, VGSH | Interest-rate sensitivity |
+          | AI/semis | SMH, SOXX | Small volatile sleeve only |
 
-## Action checklist / 今日行動清單
-1. Do not use retirement liquidity for the AI startup bucket.
-2. Keep USD/TWD cash matched to expected living location.
-3. Wait for AI writer and market data feeds before making allocation changes.
-"""
+          ## Action checklist / 今日行動清單
+          1. Do not use retirement liquidity for the AI startup bucket.
+          2. Keep USD/TWD cash matched to expected living location.
+          3. Wait for AI writer and market data feeds before making allocation changes.
+          """
               return f"""# AI Startup Watch / AI 創業與技術觀察
 
-**Date:** {NOW:%Y-%m-%d %H:%M} Taipei
+          **Date:** {NOW:%Y-%m-%d %H:%M} Taipei
 
-**AI writer status:** OpenAI did not return a usable report this run. This readable fallback is published instead of raw API errors.
+          **AI writer status:** OpenAI did not return a usable report this run. This readable fallback is published instead of raw API errors.
 
-## AI startup executive summary / AI 創業總覽
-- Irene's strongest edge is combining IT/semiconductor domain knowledge with practical AI agent workflows.
-- Irene 的優勢是 IT/半導體經驗，加上 AI agent 實務應用。
+          ## AI startup executive summary / AI 創業總覽
+          - Irene's strongest edge is combining IT/semiconductor domain knowledge with practical AI agent workflows.
+          - Irene 的優勢是 IT/半導體經驗，加上 AI agent 實務應用。
 
-## Watch areas / 每日觀察方向
-| Area | What to watch | Status |
-|---|---|---|
-| AI agents | Workflow automation, vertical agents, enterprise adoption | News feed pending |
-| Models | OpenAI, Anthropic, Google, Meta, xAI, open-source | News feed pending |
-| Semiconductors | Nvidia, TSMC, ASML, inference chips, edge AI | News feed pending |
-| Startup ideas | B2B AI automation for semiconductor/IT consulting | Research pending |
+          ## Watch areas / 每日觀察方向
+          | Area | What to watch | Status |
+          |---|---|---|
+          | AI agents | Workflow automation, vertical agents, enterprise adoption | News feed pending |
+          | Models | OpenAI, Anthropic, Google, Meta, xAI, open-source | News feed pending |
+          | Semiconductors | Nvidia, TSMC, ASML, inference chips, edge AI | News feed pending |
+          | Startup ideas | B2B AI automation for semiconductor/IT consulting | Research pending |
 
-## 7-day action deck / 七天行動看板
-1. Define one customer pain point from existing consulting network.
-2. Build one AI-agent demo around a real workflow.
-3. Interview three potential users before spending startup capital.
-"""
+          ## 7-day action deck / 七天行動看板
+          1. Define one customer pain point from existing consulting network.
+          2. Build one AI-agent demo around a real workflow.
+          3. Interview three potential users before spending startup capital.
+          """
 
           def inline_md(text: str) -> str:
               return html.escape(text).replace("**", "")
