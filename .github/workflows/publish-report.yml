@@ -5,6 +5,9 @@ on:
   schedule:
     # 10:40 Taiwan time (UTC+8)
     - cron: "40 2 * * *"
+  push:
+    paths:
+      - trigger-report.txt
 
 permissions:
   contents: read
