@@ -37,6 +37,7 @@ jobs:
           import json
           import os
           import re
+          import urllib.error
           import urllib.request
           from pathlib import Path
           from zoneinfo import ZoneInfo
@@ -45,6 +46,8 @@ jobs:
           PUBLIC_BASE = "https://hpyuan1220.github.io/line-report-public"
           API_KEY = os.environ.get("OPENAI_API_KEY", "").strip()
           MODEL = os.environ.get("OPENAI_MODEL", "gpt-4.1-mini").strip() or "gpt-4.1-mini"
+          CACHE_TAG = os.environ.get("GITHUB_RUN_ID", NOW.strftime("%Y%m%d%H%M"))
+          AI_STATUS = []
           PROFILE = """Irene profile: 61 years old; US citizen and Taiwan citizen; wants to live between US and Taiwan for the rest of life; main illiquid house asset about USD 5M and cannot sell now; liquid cash about USD 400K plus NTD 700K plus NTD 300K insurance; no stable fixed income now, commission/consulting based; 45 years in IT and semiconductor industry, still consulting; plans about USD 100K high-risk AI startup budget for 2026-2027; wants conservative, liquidity-first retirement-aware investment monitoring plus AI startup/technology watch."""
           
           INVESTMENT_PROMPT = f"""You are Irene's bilingual investment watch analyst. Write a daily briefing in English and Traditional Chinese for this exact profile.
@@ -78,8 +81,9 @@ jobs:
           
           Formatting: Markdown, clear headings, concise but substantive. Do not fabricate breaking news; mark missing live news as feed pending. Date: {NOW:%Y-%m-%d %H:%M} Taipei."""
           
-          def call_openai(prompt: str) -> str | None:
+          def call_openai(prompt: str, label: str) -> str | None:
               if not API_KEY:
+                  AI_STATUS.append(f"{label}: OPENAI_API_KEY missing")
                   return None
               payload = {"model": MODEL, "input": prompt, "max_output_tokens": 2600}
               req = urllib.request.Request(
@@ -91,9 +95,15 @@ jobs:
               try:
                   with urllib.request.urlopen(req, timeout=90) as response:
                       data = json.loads(response.read().decode("utf-8"))
+              except urllib.error.HTTPError as exc:
+                  detail = exc.read().decode("utf-8", errors="replace")[:700]
+                  AI_STATUS.append(f"{label}: HTTP {exc.code} {detail}")
+                  return None
               except Exception as exc:
-                  return f"# AI generation failed\n\nOpenAI API call failed: {type(exc).__name__}: {exc}\n\nFallback needed."
+                  AI_STATUS.append(f"{label}: {type(exc).__name__}: {exc}")
+                  return None
               if data.get("output_text"):
+                  AI_STATUS.append(f"{label}: OpenAI generated")
                   return str(data["output_text"]).strip()
               parts = []
               for item in data.get("output", []):
@@ -101,7 +111,12 @@ jobs:
                       text = content.get("text")
                       if text:
                           parts.append(text)
-              return "\n".join(parts).strip() if parts else None
+              if parts:
+                  AI_STATUS.append(f"{label}: OpenAI generated")
+                  return "
+".join(parts).strip()
+              AI_STATUS.append(f"{label}: empty OpenAI response")
+              return None
           
           def fallback(kind: str) -> str:
               if kind == "investment":
@@ -109,7 +124,7 @@ jobs:
           
           **Date:** {NOW:%Y-%m-%d %H:%M} Taipei
           
-          **AI writer status:** OPENAI_API_KEY is not connected yet. This is the fallback framework, not the full AI-generated report.
+          **AI writer status:** The OpenAI writer did not return a usable report in this run. This fallback keeps the dashboard readable and avoids publishing raw API errors.
           
           ## Executive dashboard / 今日總覽
           - Priority: preserve liquidity first because fixed income is not stable and the house asset is illiquid.
@@ -140,7 +155,7 @@ jobs:
           
           **Date:** {NOW:%Y-%m-%d %H:%M} Taipei
           
-          **AI writer status:** OPENAI_API_KEY is not connected yet. This is the fallback framework, not the full AI-generated startup briefing.
+          **AI writer status:** The OpenAI writer did not return a usable report in this run. This fallback keeps the dashboard readable and avoids publishing raw API errors.
           
           ## AI startup executive summary / AI 創業總覽
           - Irene's strongest edge is combining 45 years of IT/semiconductor domain knowledge with practical AI agent workflows.
@@ -186,9 +201,9 @@ jobs:
                   elif line.startswith("- "):
                       if not in_ul: rows.extend(close_blocks()); rows.append("<ul>"); in_ul = True
                       rows.append(f"<li>{html.escape(line[2:])}</li>")
-                  elif re.match(r"^\d+\. ", line):
+                  elif re.match(r"^d+. ", line):
                       if not in_ol: rows.extend(close_blocks()); rows.append("<ol>"); in_ol = True
-                      rows.append(f"<li>{html.escape(re.sub(r'^\d+\. ', '', line))}</li>")
+                      rows.append(f"<li>{html.escape(re.sub(r'^d+. ', '', line))}</li>")
                   elif line.startswith("|") and line.endswith("|"):
                       cells = [html.escape(c.strip()) for c in line.strip("|").split("|")]
                       if all(set(c) <= {"-", ":", " "} for c in cells): continue
@@ -200,23 +215,33 @@ jobs:
                       safe = html.escape(line).replace("**", "")
                       rows.append(f"<p>{safe}</p>")
               rows.extend(close_blocks())
-              body = "\n".join(rows)
-              writer = "OpenAI API" if API_KEY else "fallback until OPENAI_API_KEY is added"
+              body = "
+".join(rows)
+              writer = "OpenAI API connected" if API_KEY else "fallback until OPENAI_API_KEY is added"
               return f"""<!doctype html>
           <html lang="zh-Hant"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
           <title>{html.escape(title)}</title>
           <style>body{{margin:0;background:#f6f7f9;color:#1f2328;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}}main{{max-width:980px;margin:0 auto;padding:28px 16px 48px}}nav{{margin-bottom:20px}}a{{color:#0969da}}h1{{font-size:28px;line-height:1.2}}h2{{font-size:20px;margin-top:28px;border-bottom:1px solid #d8dee4;padding-bottom:6px}}h3{{font-size:17px;margin-top:20px}}p,li{{font-size:16px;line-height:1.58}}table{{width:100%;border-collapse:collapse;margin:12px 0 24px;background:#fff}}th,td{{border:1px solid #d8dee4;padding:8px 10px;text-align:left;font-size:14px}}th{{background:#eef1f4}}tr:nth-child(even) td{{background:#fafbfc}}.note{{color:#57606a;font-size:13px;margin-top:24px}}@media(max-width:720px){{main{{padding:20px 12px 36px}}table{{display:block;overflow-x:auto}}h1{{font-size:24px}}}}</style>
-          </head><body><main><nav><a href="./">Home</a> · <a href="investment.html">Investment</a> · <a href="ai-startup.html">AI Startup</a></nav>
+          </head><body><main><nav><a href="./?v={CACHE_TAG}">Home</a> · <a href="investment.html?v={CACHE_TAG}">Investment</a> · <a href="ai-startup.html?v={CACHE_TAG}">AI Startup</a></nav>
           {body}<p class="note">Generated by GitHub Actions. AI writer: {writer}. No secrets are published.</p></main></body></html>"""
           
-          investment = call_openai(INVESTMENT_PROMPT) or fallback("investment")
-          startup = call_openai(STARTUP_PROMPT) or fallback("startup")
+          investment = call_openai(INVESTMENT_PROMPT, "investment") or fallback("investment")
+          startup = call_openai(STARTUP_PROMPT, "startup") or fallback("startup")
           Path("public/investment.html").write_text(md_to_html(investment, "Investment Watch"), encoding="utf-8")
           Path("public/ai-startup.html").write_text(md_to_html(startup, "AI Startup Watch"), encoding="utf-8")
           writer = "OpenAI API connected" if API_KEY else "fallback until OPENAI_API_KEY secret is added"
-          index = f"""<!doctype html><html lang="zh-Hant"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Irene Daily Watch</title><style>body{{font-family:-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif;background:#f6f7f9;color:#1f2328;margin:0}}main{{max-width:820px;margin:0 auto;padding:28px 16px}}a.card{{display:block;background:white;border:1px solid #d8dee4;border-radius:8px;padding:18px;margin:14px 0;text-decoration:none;color:#1f2328}}span{{color:#57606a}}</style></head><body><main><h1>Irene Daily Watch</h1><p>{NOW:%Y-%m-%d %H:%M} Taipei</p><a class="card" href="investment.html"><h2>Investment Watch / 投資觀察</h2><span>Retirement-aware macro, ETF, liquidity and allocation watch.</span></a><a class="card" href="ai-startup.html"><h2>AI Startup Watch / AI 創業觀察</h2><span>AI agent, technology, semiconductor and startup action deck.</span></a><p>AI writer: {writer}.</p></main></body></html>"""
+          index = f"""<!doctype html><html lang="zh-Hant"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Irene Daily Watch</title><style>body{{font-family:-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif;background:#f6f7f9;color:#1f2328;margin:0}}main{{max-width:820px;margin:0 auto;padding:28px 16px}}a.card{{display:block;background:white;border:1px solid #d8dee4;border-radius:8px;padding:18px;margin:14px 0;text-decoration:none;color:#1f2328}}span{{color:#57606a}}</style></head><body><main><h1>Irene Daily Watch</h1><p>{NOW:%Y-%m-%d %H:%M} Taipei</p><a class="card" href="investment.html?v={CACHE_TAG}"><h2>Investment Watch / 投資觀察</h2><span>Retirement-aware macro, ETF, liquidity and allocation watch.</span></a><a class="card" href="ai-startup.html?v={CACHE_TAG}"><h2>AI Startup Watch / AI 創業觀察</h2><span>AI agent, technology, semiconductor and startup action deck.</span></a><p>AI writer: {writer}.</p></main></body></html>"""
           Path("public/index.html").write_text(index, encoding="utf-8")
-          Path("line-message.txt").write_text(f"Daily Watch generated by GitHub Actions\nDate: {NOW:%Y-%m-%d %H:%M} Taipei\n\nInvestment Watch:\n{PUBLIC_BASE}/investment.html\n\nAI Startup Watch:\n{PUBLIC_BASE}/ai-startup.html", encoding="utf-8")
+          Path("line-message.txt").write_text(f"Daily Watch generated by GitHub Actions
+Date: {NOW:%Y-%m-%d %H:%M} Taipei
+
+Open report on phone:
+{PUBLIC_BASE}/?v={CACHE_TAG}
+
+Tap Investment Watch or AI Startup Watch inside the page.", encoding="utf-8")
+          Path("public/ai-status.txt").write_text("
+".join(AI_STATUS) + "
+", encoding="utf-8")
           PY
 
       - name: Setup Pages
